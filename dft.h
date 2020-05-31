@@ -4,6 +4,8 @@
 
 #include "util/misc.h"
 #include <math.h>
+#include <iostream>
+using namespace std;
 
 #define Max_trees 9		/* Maximum number of diffusion trees in model */
 
@@ -39,11 +41,20 @@ typedef struct
 } dft_state[Max_trees];
 
 
+double dft_cdiv 
+( double c1,
+  int dt,			/* Index of tree (from 0) */
+  double t			/* Time argument, non-negative, <= 1 */
+)
+{ 
+    if (t>1) abort();
+    return c1 * log(1-t);
+}
 
 /* TABLES OF PRECOMPUTED VALUES. */
 
-static double *log_factorial;	/* Logs of factorial from 0 to N_train */
-static double *sum_reciprocals;	/* Table of sum from i=1 to n of 1/i, for
+double *log_factorial = 0;	/* Logs of factorial from 0 to N_train */
+double *sum_reciprocals = 0;	/* Table of sum from i=1 to n of 1/i, for
 				   n from 0 to N_train */
 
 /* INITIALIZE THE TABLES OF PRECOMPUTED VALUES.*/
@@ -53,7 +64,7 @@ static void initialize_tables (int N_train)
 
   if (log_factorial==0) 
   { 
-    log_factorial = (double*) chk_alloc (N_train+1, sizeof *log_factorial); // chk_alloc is defined in misc.c
+    log_factorial = (double*) malloc ((N_train+1)*sizeof(double)); // chk_alloc is defined in misc.c
 
     log_factorial[0] = 0;
 
@@ -64,7 +75,7 @@ static void initialize_tables (int N_train)
 
   if (sum_reciprocals==0)
   { 
-    sum_reciprocals = (double*) chk_alloc (N_train+1, sizeof *sum_reciprocals);
+    sum_reciprocals = (double*) malloc ((N_train+1)*sizeof(double));
 
     sum_reciprocals[0] = 0;
     for (n = 1; n<=N_train; n++)
@@ -91,7 +102,7 @@ double dft_log_prob_div
 ( double c1,		/* Hyperparameters for diffusion tree model */
   int dt,			    /* Index of tree (from 0) */
   dft_state st,			/* Pointers to state */
-  int root,			    /* Root of sub-tree to look at, zero for all */
+  int cur_node,			    /* Root of sub-tree to look at, zero for all */
   double div0			/* Divergence time of branch to root */
 )
 {
@@ -100,17 +111,21 @@ double dft_log_prob_div
 
   
 
-  if (root==0)
+  if (cur_node==0)
   { 
-      root = st[dt].root;
+      cur_node = st[dt].root;
+     // cout << "Root is = "<< cur_node << endl;
   }
+ // cout << cur_node << endl;
 
-  if (root>0) return 0; // root > 0 means --> terminal node
+  if (cur_node == -1) return 0; // root == -1 means --> terminal node
 
-  n = totpts(st[dt].nodes[-root]);
-  if (n<2) abort();
+  //n = totpts(st[dt].nodes[cur_node]);
+  //cout << n << endl;
+  n = 2;
+  //if (n<2) abort();
 
-  div1 = st[dt].divt[-root]; // dft_state[tree_index].divt[-root] what is divt?
+  div1 = st[dt].divt[cur_node]; // dft_state[tree_index].divt[-root] what is divt?
   if (div1<div0) abort();
    
   // note shuning: log prob of no divergence;
@@ -124,18 +139,13 @@ double dft_log_prob_div
   // lp = log prob of divergence - log prob of not divergence ()
   
   // note Shuning: recursive function for child nodes..... think in details;
-  lp += dft_log_prob_div (c1, dt, st, chld(st[dt].nodes[-root],0), div1);
-  lp += dft_log_prob_div (c1, dt, st, chld(st[dt].nodes[-root],1), div1);
+
+ // cout << chld(st[dt].nodes[cur_node],0) << " " << chld(st[dt].nodes[cur_node],1) << endl;
+
+  lp += dft_log_prob_div (c1, dt, st, chld(st[dt].nodes[cur_node],0), div1);
+  lp += dft_log_prob_div (c1, dt, st, chld(st[dt].nodes[cur_node],1), div1);
 
   return lp;
 }
 
-double dft_cdiv 
-( double c1,
-  int dt,			/* Index of tree (from 0) */
-  double t			/* Time argument, non-negative, <= 1 */
-)
-{ 
-    if (t>1) abort();
-    return c1 * log(1-t);
-}
+
