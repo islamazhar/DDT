@@ -5,6 +5,7 @@
 #include "util/misc.h"
 #include <math.h>
 #include <iostream>
+
 using namespace std;
 
 #define Max_trees 9		/* Maximum number of diffusion trees in model */
@@ -34,7 +35,7 @@ typedef struct
 
 typedef struct
 {
-  int root;		/* Parent indexes, offset for use with +/- indexes */
+  int *parents;
   double *divt;		/* Divergence times, offset for indexing from 1 */
   dft_tree_node *nodes;	/* Nodes in tree, indexed from 1 */
 
@@ -94,58 +95,86 @@ double dft_div
   if (t==1) 
   { return c1 ? 1 : 0;
   }
+  // cout << t << " = " << c1  << endl;
   return c1 / (1-t);
 }
 
 
 double dft_log_prob_div
-( double c1,		/* Hyperparameters for diffusion tree model */
+( double c1,
   int dt,			    /* Index of tree (from 0) */
   dft_state st,			/* Pointers to state */
-  int cur_node,			    /* Root of sub-tree to look at, zero for all */
-  double div0			/* Divergence time of branch to root */
+  int root,			    /* Root of sub-tree to look at, zero for all */
+  double div0,			/* Divergence time of branch to root */
+  int n_cases
 )
 {
-  double lp, div1;
+  double lp=0, div1;
   int n;
 
-  
-
-  if (cur_node==0)
-  { 
-      cur_node = st[dt].root;
-     // cout << "Root is = "<< cur_node << endl;
+  if (root == 0) { // find the root of the current tree. The root of the current tree has parent = 0
+        for(int i=1;i<n_cases;i++) {
+            if(st[dt].parents[i] == 0) {
+                root = i;
+                break;
+            }
+        }
   }
- // cout << cur_node << endl;
 
-  if (cur_node == -1) return 0; // root == -1 means --> terminal node
+  if (root == -1 ) return 0; // root == -1 means --> terminal node
 
-  //n = totpts(st[dt].nodes[cur_node]);
-  //cout << n << endl;
-  n = 2;
-  //if (n<2) abort();
+  n = totpts(st[dt].nodes[root]);
+  cout << n << " " << root << endl;
+  if (n<2) abort(); // unnecessary
 
-  div1 = st[dt].divt[cur_node]; // dft_state[tree_index].divt[-root] what is divt?
+  div1 = st[dt].divt[root];
   if (div1<div0) abort();
    
-  // note shuning: log prob of no divergence;
+  div1 = st[dt].divt[root];
+  if (div1<div0) abort();
+   
+
   if (div1>div0)
-  { lp = - sum_reciprocals[n-1] * (dft_cdiv(c1,dt,div1)-dft_cdiv(c1,dt,div0)); // dft_cdiv is defined inside dft-div.c
+  { lp = - sum_reciprocals[n-1] * (dft_cdiv(1,dt,div1)-dft_cdiv(1,dt,div0));
   }
   
-  // note shuning: log prob of divergence;
-  lp += log (dft_div (c1, dt, div1));
 
-  // lp = log prob of divergence - log prob of not divergence ()
-  
-  // note Shuning: recursive function for child nodes..... think in details;
+  lp += log (dft_div (c1, dt, div1));
 
  // cout << chld(st[dt].nodes[cur_node],0) << " " << chld(st[dt].nodes[cur_node],1) << endl;
 
-  lp += dft_log_prob_div (c1, dt, st, chld(st[dt].nodes[cur_node],0), div1);
-  lp += dft_log_prob_div (c1, dt, st, chld(st[dt].nodes[cur_node],1), div1);
+  lp += dft_log_prob_div (c1, dt, st, chld(st[dt].nodes[root],0), div1, n_cases);
+  lp += dft_log_prob_div (c1, dt, st, chld(st[dt].nodes[root],1), div1, n_cases);
 
   return lp;
 }
+int dft_conv_tree
+(
+        dft_state dft,		/* Array of nodes to store all dft trees*/
+        int dt,             /* The id of tree */
+        int cur_node,		/* the id of the current node in the tree*/
+        int n_cases         /* Number of cases in tree */
+)
+{
+    if (cur_node == 0) { // find the root of the current tree. The root of the current tree has parent = 0
+        for(int i=1;i<n_cases;i++) {
+            if(dft[dt].parents[i] == 0) {
+                cur_node = i;
+                break;
+            }
+        }
+    }
+
+    if (cur_node == -1) return 1; // leaf node
+
+    int l = chld(dft[dt].nodes[cur_node],0);
+    int r = chld(dft[dt].nodes[cur_node],1);
+
+    dft[dt].nodes[cur_node].n_points[0] = dft_conv_tree(dft, dt, l, n_cases);
+    dft[dt].nodes[cur_node].n_points[1] = dft_conv_tree(dft, dt, r, n_cases);
+
+    return totpts(dft[dt].nodes[cur_node]);
+}
+
 
 
